@@ -30,7 +30,8 @@ type Agent struct {
 	// for this node known to the agent.
 	node *api.Node
 
-	keys []*api.EncryptionKey
+	keys      []*api.EncryptionKey
+	neighbors []string
 
 	sessionq chan sessionOperation
 	worker   Worker
@@ -425,7 +426,8 @@ func (a *Agent) handleSessionMessage(ctx context.Context, message *api.SessionMe
 		}
 		if !same {
 			a.keys = message.NetworkBootstrapKeys
-			if err := a.config.Executor.SetNetworkBootstrapKeys(a.keys); err != nil {
+			a.neighbors = message.ZoneNeighbors
+			if err := a.config.Executor.SetNetworkBootstrapKeys(a.keys, a.neighbors); err != nil {
 				panic(fmt.Errorf("configuring network key failed"))
 			}
 		}
@@ -562,6 +564,9 @@ func (a *Agent) nodeDescriptionWithHostname(ctx context.Context, tlsInfo *api.No
 		}
 		desc.TLSInfo = tlsInfo
 	}
+
+	desc.Zone = a.config.Zone
+
 	return desc, err
 }
 

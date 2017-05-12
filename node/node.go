@@ -108,6 +108,8 @@ type Config struct {
 
 	// PluginGetter provides access to docker's plugin inventory.
 	PluginGetter plugingetter.PluginGetter
+
+	Zone string
 }
 
 // Node implements the primary node functionality for a member of a swarm
@@ -133,6 +135,7 @@ type Node struct {
 	manager          *manager.Manager
 	notifyNodeChange chan *agent.NodeChanges // used by the agent to relay node updates from the dispatcher Session stream to (*Node).run
 	unlockKey        []byte
+	zone             string
 }
 
 type lastSeenRole struct {
@@ -188,6 +191,7 @@ func New(c *Config) (*Node, error) {
 		ready:            make(chan struct{}),
 		notifyNodeChange: make(chan *agent.NodeChanges, 1),
 		unlockKey:        c.UnlockKey,
+		zone:             c.Zone,
 	}
 
 	if n.config.JoinAddr != "" || n.config.ForceNewCluster {
@@ -497,6 +501,7 @@ waitPeer:
 			CertIssuerPublicKey: issuer.PublicKey,
 			CertIssuerSubject:   issuer.Subject,
 		},
+		Zone: n.config.Zone,
 	})
 	if err != nil {
 		return err

@@ -19,7 +19,7 @@ type Executor interface {
 
 	// SetNetworkBootstrapKeys passes the symmetric keys from the
 	// manager to the executor.
-	SetNetworkBootstrapKeys([]*api.EncryptionKey) error
+	SetNetworkBootstrapKeys([]*api.EncryptionKey, []string) error
 }
 
 // SecretsProvider is implemented by objects that can store secrets, typically

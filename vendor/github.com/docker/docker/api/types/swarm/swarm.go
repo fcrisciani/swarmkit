@@ -136,6 +136,7 @@ type InitRequest struct {
 	Spec             Spec
 	AutoLockManagers bool
 	Availability     NodeAvailability
+	Zone             string
 }
 
 // JoinRequest is the request used to join a swarm.
@@ -145,6 +146,7 @@ type JoinRequest struct {
 	RemoteAddrs   []string
 	JoinToken     string // accept by secret
 	Availability  NodeAvailability
+	Zone          string
 }
 
 // UnlockRequest is the request used to unlock a swarm.

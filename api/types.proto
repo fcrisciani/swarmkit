@@ -89,6 +89,9 @@ message NodeDescription {
 
 	// Information on the node's TLS setup
 	NodeTLSInfo tls_info = 5 [(gogoproto.customname) = "TLSInfo"];
+
+	// Node deployment zone
+	string Zone = 6;
 }
 
 message NodeTLSInfo {

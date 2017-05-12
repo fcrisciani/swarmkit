@@ -129,6 +129,8 @@ message SessionMessage {
 
 	// Which root certificates to trust
 	bytes RootCA = 5;
+
+	repeated string ZoneNeighbors = 6;
 }
 
 // HeartbeatRequest provides identifying properties for a single heartbeat.

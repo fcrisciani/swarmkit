@@ -7,6 +7,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
+	"github.com/Sirupsen/logrus"
 	"github.com/docker/swarmkit/api"
 	"github.com/docker/swarmkit/identity"
 	"github.com/docker/swarmkit/manager/dispatcher/heartbeat"
@@ -48,12 +49,14 @@ type nodeStore struct {
 	gracePeriodMultiplierUnknown time.Duration
 	rateLimitPeriod              time.Duration
 	nodes                        map[string]*registeredNode
+	nodesByZone                  map[string]map[string]bool
 	mu                           sync.RWMutex
 }
 
 func newNodeStore(hbPeriod, hbEpsilon time.Duration, graceMultiplier int, rateLimitPeriod time.Duration) *nodeStore {
 	return &nodeStore{
 		nodes:                        make(map[string]*registeredNode),
+		nodesByZone:                  make(map[string]map[string]bool),
 		periodChooser:                newPeriodChooser(hbPeriod, hbEpsilon),
 		gracePeriodMultiplierNormal:  time.Duration(graceMultiplier),
 		gracePeriodMultiplierUnknown: time.Duration(graceMultiplier) * 2,
@@ -82,6 +85,12 @@ func (s *nodeStore) AddUnknown(n *api.Node, expireFunc func()) error {
 		Node: n,
 	}
 	s.nodes[n.ID] = rn
+	logrus.Errorf("DEBUG zone is %s", n.Description.Zone)
+	_, ok := s.nodesByZone[n.Description.Zone]
+	if !ok {
+		s.nodesByZone[n.Description.Zone] = make(map[string]bool)
+	}
+	s.nodesByZone[n.Description.Zone][n.ID] = true
 	rn.Heartbeat = heartbeat.New(s.periodChooser.Choose()*s.gracePeriodMultiplierUnknown, expireFunc)
 	return nil
 }
@@ -127,6 +136,11 @@ func (s *nodeStore) Add(n *api.Node, expireFunc func()) *registeredNode {
 		Disconnect: make(chan struct{}),
 	}
 	s.nodes[n.ID] = rn
+	// _, ok := s.nodesByZone[n.Description.Zone]
+	// if !ok {
+	// 	s.nodesByZone[n.Description.Zone] = make(map[string]*registeredNode)
+	// }
+	// s.nodesByZone[n.Description.Zone][n.ID] = rn
 	rn.Heartbeat = heartbeat.New(s.periodChooser.Choose()*s.gracePeriodMultiplierNormal, expireFunc)
 	return rn
 }
@@ -151,6 +165,45 @@ func (s *nodeStore) GetWithSession(id, sid string) (*registeredNode, error) {
 	return rn, rn.checkSessionID(sid)
 }
 
+func (s *nodeStore) AddZone(id, zone string) error {
+	s.mu.RLock()
+	_, ok := s.nodes[id]
+	if !ok {
+		s.mu.RUnlock()
+		return ErrNodeNotRegistered
+	}
+
+	_, ok = s.nodesByZone[zone]
+	if !ok {
+		s.nodesByZone[zone] = make(map[string]bool)
+	}
+	s.nodesByZone[zone][id] = true
+	s.mu.RUnlock()
+	return nil
+}
+
+func (s *nodeStore) GetZoneNeighbors(zone string, limit int) ([]string, error) {
+	s.mu.RLock()
+	nodesZone, ok := s.nodesByZone[zone]
+	if !ok {
+		s.mu.RUnlock()
+		return nil, grpc.Errorf(codes.NotFound, ErrNodeNotRegistered.Error())
+	}
+	if limit <= 0 {
+		limit = len(nodesZone)
+	}
+	neighbors := make([]string, 0, limit)
+	for nid := range nodesZone {
+		neighbors = append(neighbors, nid)
+		limit--
+		if limit == 0 {
+			break
+		}
+	}
+	s.mu.RUnlock()
+	return neighbors, nil
+}
+
 func (s *nodeStore) Heartbeat(id, sid string) (time.Duration, error) {
 	rn, err := s.GetWithSession(id, sid)
 	if err != nil {
@@ -169,6 +222,7 @@ func (s *nodeStore) Delete(id string) *registeredNode {
 	s.mu.Lock()
 	var node *registeredNode
 	if rn, ok := s.nodes[id]; ok {
+		delete(s.nodesByZone[rn.Node.Description.Zone], id)
 		delete(s.nodes, id)
 		rn.Heartbeat.Stop()
 		node = rn
@@ -194,5 +248,6 @@ func (s *nodeStore) Clean() {
 		rn.Heartbeat.Stop()
 	}
 	s.nodes = make(map[string]*registeredNode)
+	s.nodesByZone = make(map[string]map[string]bool)
 	s.mu.Unlock()
 }

@@ -1076,7 +1076,8 @@ func (d *Dispatcher) getManagers() []*api.WeightedPeer {
 	return d.lastSeenManagers
 }
 
-func (d *Dispatcher) getNetworkBootstrapKeys() []*api.EncryptionKey {
+// TODO(flavio.crisciani) have a different key per zone
+func (d *Dispatcher) getNetworkBootstrapKeys(zone string) []*api.EncryptionKey {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return d.networkBootstrapKeys
@@ -1153,16 +1154,27 @@ func (d *Dispatcher) Session(r *api.SessionRequest, stream api.Dispatcher_Sessio
 	if _, err = d.nodes.GetWithSession(nodeID, sessionID); err != nil {
 		return err
 	}
+	d.nodes.AddZone(nodeID, r.Description.Zone)
 
 	clusterUpdatesCh, clusterCancel := d.clusterUpdateQueue.Watch()
 	defer clusterCancel()
+
+	// Get max 5 nodes IPs that will be used to seed the Gossip cluster
+	// Note that the zone option is the one used to identify if 2 nodes
+	// are part of the same cluster so will be allowed to communicate
+	neighbors, _ := d.nodes.GetZoneNeighbors(r.Description.Zone, 5)
+	zoneNeighbors := make([]string, 0, len(neighbors))
+	for _, nid := range neighbors {
+		zoneNeighbors = append(zoneNeighbors, d.nodeUpdates[nid].status.Addr)
+	}
 
 	if err := stream.Send(&api.SessionMessage{
 		SessionID:            sessionID,
 		Node:                 nodeObj,
 		Managers:             d.getManagers(),
-		NetworkBootstrapKeys: d.getNetworkBootstrapKeys(),
+		NetworkBootstrapKeys: d.getNetworkBootstrapKeys(r.Description.Zone),
 		RootCA:               d.getRootCACert(),
+		ZoneNeighbors:        zoneNeighbors,
 	}); err != nil {
 		return err
 	}
@@ -1227,7 +1239,7 @@ func (d *Dispatcher) Session(r *api.SessionRequest, stream api.Dispatcher_Sessio
 			mgrs = d.getManagers()
 		}
 		if netKeys == nil {
-			netKeys = d.getNetworkBootstrapKeys()
+			netKeys = d.getNetworkBootstrapKeys(r.Description.Zone)
 		}
 		if rootCert == nil {
 			rootCert = d.getRootCACert()
@@ -1239,6 +1251,7 @@ func (d *Dispatcher) Session(r *api.SessionRequest, stream api.Dispatcher_Sessio
 			Managers:             mgrs,
 			NetworkBootstrapKeys: netKeys,
 			RootCA:               rootCert,
+			ZoneNeighbors:        zoneNeighbors,
 		}); err != nil {
 			return err
 		}

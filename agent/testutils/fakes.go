@@ -42,7 +42,7 @@ func (e *TestExecutor) Configure(ctx context.Context, node *api.Node) error {
 }
 
 // SetNetworkBootstrapKeys does nothing.
-func (e *TestExecutor) SetNetworkBootstrapKeys([]*api.EncryptionKey) error {
+func (e *TestExecutor) SetNetworkBootstrapKeys([]*api.EncryptionKey, []string) error {
 	return nil
 }
 

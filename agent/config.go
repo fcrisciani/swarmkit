@@ -43,6 +43,8 @@ type Config struct {
 
 	// NodeTLSInfo contains the starting node TLS info to bootstrap into the agent
 	NodeTLSInfo *api.NodeTLSInfo
+
+	Zone string
 }
 
 func (c *Config) validate() error {
