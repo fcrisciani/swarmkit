@@ -1,6 +1,7 @@
 package allocator
 
 import (
+	"fmt"
 	"net"
 	"runtime/debug"
 	"strconv"
@@ -937,6 +938,90 @@ func TestAllocatorRestartNoEndpointSpec(t *testing.T) {
 		watchService(t, serviceWatch, false, hasNoIPOverlapServices)
 	}
 	assert.Len(t, expectedIPs, 0)
+}
+
+func TestNetworkSubnetStealing(t *testing.T) {
+	s := store.NewMemoryStore(nil)
+	assert.NotNil(t, s)
+	defer s.Close()
+	// Create 3 services with 1 task each
+	// numsvcstsks := 3
+	assert.NoError(t, s.Update(func(tx store.Tx) error {
+		// populate ingress network
+		in := &api.Network{
+			ID: "zzoverlay1",
+			Spec: api.NetworkSpec{
+				Annotations: api.Annotations{
+					Name: "zzoverlay1",
+				},
+			},
+		}
+		assert.NoError(t, store.CreateNetwork(tx, in))
+
+		return nil
+	}))
+
+	a, err := New(s, nil)
+	assert.NoError(t, err)
+	assert.NotNil(t, a)
+	// Start allocator
+	go func() {
+		assert.NoError(t, a.Run(context.Background()))
+	}()
+
+	taskWatch, cancel := state.Watch(s.WatchQueue(), api.EventCreateNetwork{}, api.EventUpdateNetwork{})
+	defer cancel()
+
+	// serviceWatch, cancel := state.Watch(s.WatchQueue(), api.EventUpdateService{}, api.EventDeleteService{})
+	// defer cancel()
+
+	// Confirm tasks have no IPs that overlap with the services VIPs on restart
+	watchNetwork(t, taskWatch, false, func(t assert.TestingT, n *api.Network) bool {
+		fmt.Printf("Network object: %+v\n", n)
+		return true
+	})
+
+	a.Stop()
+
+	fmt.Println("Ended the first run")
+
+	assert.NoError(t, s.Update(func(tx store.Tx) error {
+
+		in := &api.Network{
+			ID: "overlay2",
+			Spec: api.NetworkSpec{
+				Annotations: api.Annotations{
+					Name: "overlay2",
+				},
+			},
+		}
+		assert.NoError(t, store.CreateNetwork(tx, in))
+
+		return nil
+	}))
+
+	a, err = New(s, nil)
+	assert.NoError(t, err)
+	assert.NotNil(t, a)
+	// Start allocator
+	go func() {
+		assert.NoError(t, a.Run(context.Background()))
+	}()
+
+	taskWatch, cancel = state.Watch(s.WatchQueue(), api.EventCreateNetwork{}, api.EventUpdateNetwork{})
+	defer cancel()
+
+	// serviceWatch, cancel := state.Watch(s.WatchQueue(), api.EventUpdateService{}, api.EventDeleteService{})
+	// defer cancel()
+
+	// Confirm tasks have no IPs that overlap with the services VIPs on restart
+	watchNetwork(t, taskWatch, false, func(t assert.TestingT, n *api.Network) bool {
+		fmt.Printf("POST Network object: %+v\n", n)
+		return false
+	})
+
+	a.Stop()
+
 }
 
 func TestNodeAllocator(t *testing.T) {
